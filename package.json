@@ -1,8 +1,8 @@
 {
-  "name": "cf-ai-interview-agent",
+  "name": "cf-ai-agentic-interview-mate",
   "version": "1.0.0",
   "private": true,
-  "description": "Agentic AI mock-interview coach built on Cloudflare Agents, Workflows, Workers AI and Vectorize",
+  "description": "Agentic Interview Mate — an AI mock-interviewer built on Cloudflare Agents, Workflows, Workers AI and Vectorize",
   "keywords": [
     "agents",
     "ai",

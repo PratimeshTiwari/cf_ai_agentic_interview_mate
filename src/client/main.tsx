@@ -5,7 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 function Placeholder() {
   return (
     <main className="min-h-screen flex items-center justify-center">
-      <p className="text-slate-400">Ava · AI Interview Coach</p>
+      <p className="text-slate-400">Agentic Interview Mate</p>
     </main>
   );
 }
