@@ -20,7 +20,8 @@
     "types": "wrangler types env.d.ts",
     "format": "oxfmt --write .",
     "lint": "oxlint src/",
-    "check": "oxfmt --check . && oxlint src/ && tsc"
+    "check": "oxfmt --check . && oxlint src/ && tsc",
+    "setup:vectorize": "wrangler vectorize create interview-memories --dimensions=768 --metric=cosine && wrangler vectorize create-metadata-index interview-memories --property-name=userId --type=string"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.124",
