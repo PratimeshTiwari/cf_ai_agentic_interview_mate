@@ -24,6 +24,9 @@ import {
  * It owns the transcript (persisted to SQLite by AIChatAgent) and the live
  * interview state, which is synced to every connected client.
  */
+/** End the session after this long without candidate activity. */
+export const INACTIVITY_LIMIT_SECONDS = 120;
+
 export class InterviewAgent extends AIChatAgent<Env, InterviewState> {
   initialState = INITIAL_INTERVIEW_STATE;
   maxPersistedMessages = 200;
@@ -44,13 +47,39 @@ export class InterviewAgent extends AIChatAgent<Env, InterviewState> {
       startedAt: Date.now(),
       lastActivityAt: Date.now()
     });
+    await this.schedule(INACTIVITY_LIMIT_SECONDS, "checkInactivity");
     return this.state;
+  }
+
+  /** Clients call this while the candidate is speaking, typing or listening. */
+  @callable()
+  async touch() {
+    if (this.state.status !== "active") return;
+    this.setState({ ...this.state, lastActivityAt: Date.now() });
+  }
+
+  /**
+   * Scheduled watchdog. A single timer chain is kept alive: if there was
+   * activity since it was scheduled, it re-arms itself for the remaining
+   * time; otherwise it ends the interview.
+   */
+  async checkInactivity() {
+    if (this.state.status !== "active") return;
+    const idleMs = Date.now() - (this.state.lastActivityAt ?? 0);
+    const limitMs = INACTIVITY_LIMIT_SECONDS * 1000;
+    if (idleMs >= limitMs) {
+      await this.endSession("timeout");
+      return;
+    }
+    const remaining = Math.max(5, Math.ceil((limitMs - idleMs) / 1000));
+    await this.schedule(remaining, "checkInactivity");
   }
 
   async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
     const config = this.state.config;
     // Ignore messages before the session is configured or after it ended.
     if (!config || this.state.status !== "active") return undefined;
+    this.setState({ ...this.state, lastActivityAt: Date.now() });
 
     const system = render(INTERVIEWER_PROMPT, {
       role: config.role,
@@ -99,6 +128,8 @@ export class InterviewAgent extends AIChatAgent<Env, InterviewState> {
     if (result.status !== "completed" || this.state.status !== "active") {
       return;
     }
+    // The idle clock restarts once the interviewer has finished speaking.
+    this.setState({ ...this.state, lastActivityAt: Date.now() });
     await this.analyzeTurn();
   }
 
