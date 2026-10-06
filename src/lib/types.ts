@@ -35,6 +35,7 @@ export type InterviewState = {
   config: InterviewConfig | null;
   phase: string;
   turns: TurnLog[];
+  analyzing: boolean;
   lastActivityAt: number | null;
   startedAt: number | null;
   endedReason: "manual" | "timeout" | null;
@@ -47,6 +48,7 @@ export const INITIAL_INTERVIEW_STATE: InterviewState = {
   config: null,
   phase: "Introduction",
   turns: [],
+  analyzing: false,
   lastActivityAt: null,
   startedAt: null,
   endedReason: null,

@@ -1,12 +1,19 @@
 import { callable } from "agents";
-import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
-import { convertToModelMessages, streamText } from "ai";
+import {
+  AIChatAgent,
+  type ChatResponseResult,
+  type OnChatMessageOptions
+} from "@cloudflare/ai-chat";
+import { convertToModelMessages, generateText, Output, streamText } from "ai";
 import { getModel } from "../lib/llm";
-import { INTERVIEWER_PROMPT, render } from "../lib/prompts";
+import { ANALYZER_PROMPT, INTERVIEWER_PROMPT, render } from "../lib/prompts";
+import { clampScore, turnAnalysisSchema } from "../lib/schemas";
+import { formatTranscript, toTranscript } from "../lib/transcript";
 import {
   INITIAL_INTERVIEW_STATE,
   type InterviewConfig,
-  type InterviewState
+  type InterviewState,
+  type TurnLog
 } from "../lib/types";
 
 /**
@@ -60,5 +67,54 @@ export class InterviewAgent extends AIChatAgent<Env, InterviewState> {
     });
 
     return result.toUIMessageStreamResponse();
+  }
+
+  /**
+   * Runs after every completed interviewer reply. A second, structured LLM
+   * call scores the latest answer and updates the live HUD via setState.
+   */
+  protected async onChatResponse(result: ChatResponseResult) {
+    if (result.status !== "completed" || this.state.status !== "active") {
+      return;
+    }
+    await this.analyzeTurn();
+  }
+
+  private async analyzeTurn() {
+    const config = this.state.config;
+    if (!config) return;
+
+    this.setState({ ...this.state, analyzing: true });
+    try {
+      const { output } = await generateText({
+        model: await getModel(this.env, "analyzer"),
+        output: Output.object({ schema: turnAnalysisSchema }),
+        system: render(ANALYZER_PROMPT, {
+          role: config.role,
+          phase: this.state.phase
+        }),
+        prompt: formatTranscript(toTranscript(this.messages)),
+        temperature: 0.2
+      });
+
+      const turn: TurnLog = {
+        ...output,
+        current_score: clampScore(output.current_score),
+        plagiarism_score: clampScore(output.plagiarism_score),
+        session_plagiarism_score: clampScore(output.session_plagiarism_score),
+        turn: this.state.turns.length + 1,
+        timestamp: Date.now()
+      };
+
+      this.setState({
+        ...this.state,
+        phase: turn.phase,
+        turns: [...this.state.turns, turn],
+        analyzing: false
+      });
+    } catch (error) {
+      console.error("Turn analysis failed", error);
+      this.setState({ ...this.state, analyzing: false });
+    }
   }
 }
