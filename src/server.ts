@@ -2,6 +2,7 @@ import { routeAgentRequest } from "agents";
 
 export { InterviewAgent } from "./agents/interview";
 export { UserAgent } from "./agents/user";
+export { InterviewReportWorkflow } from "./workflows/report";
 
 export default {
   async fetch(request: Request, env: Env) {

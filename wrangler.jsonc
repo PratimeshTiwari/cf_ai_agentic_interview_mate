@@ -19,6 +19,13 @@
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["InterviewAgent", "UserAgent"] }
   ],
+  "workflows": [
+    {
+      "name": "interview-report",
+      "binding": "REPORT_WORKFLOW",
+      "class_name": "InterviewReportWorkflow"
+    }
+  ],
   // 768-dim cosine index for memory embeddings (see README for setup)
   "vectorize": [
     {

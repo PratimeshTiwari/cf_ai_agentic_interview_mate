@@ -10,8 +10,10 @@ import { formatMemoryBank } from "../lib/memory";
 import { ANALYZER_PROMPT, INTERVIEWER_PROMPT, render } from "../lib/prompts";
 import { clampScore, turnAnalysisSchema } from "../lib/schemas";
 import { formatTranscript, messageText, toTranscript } from "../lib/transcript";
+import type { ReportParams } from "../workflows/report";
 import {
   INITIAL_INTERVIEW_STATE,
+  type FinalReport,
   type InterviewConfig,
   type InterviewState,
   type TurnLog
@@ -126,20 +128,106 @@ export class InterviewAgent extends AIChatAgent<Env, InterviewState> {
         timestamp: Date.now()
       };
 
-      if (output.memory) {
-        const user = await this.userAgent(config.userId);
-        await user.addMemories([output.memory], this.name);
-      }
-
       this.setState({
         ...this.state,
         phase: turn.phase,
         turns: [...this.state.turns, turn],
         analyzing: false
       });
+
+      if (output.memory) {
+        try {
+          const user = await this.userAgent(config.userId);
+          await user.addMemories([output.memory], this.name);
+        } catch (error) {
+          console.warn("Saving turn memory failed", error);
+        }
+      }
     } catch (error) {
       console.error("Turn analysis failed", error);
       this.setState({ ...this.state, analyzing: false });
     }
+  }
+
+  /**
+   * Ends the interview and hands the transcript to InterviewReportWorkflow.
+   * The workflow reports progress and its final result back to this agent.
+   */
+  @callable()
+  async endSession(reason: "manual" | "timeout" = "manual") {
+    const config = this.state.config;
+    if (!config || this.state.status !== "active") return this.state;
+
+    this.setState({
+      ...this.state,
+      status: "ending",
+      endedReason: reason,
+      reportProgress: "Starting report"
+    });
+
+    const params: ReportParams = {
+      sessionId: this.name,
+      userId: config.userId,
+      role: config.role,
+      transcript: toTranscript(this.messages),
+      turns: this.state.turns.map((t) => ({
+        current_score: t.current_score,
+        plagiarism_score: t.plagiarism_score,
+        session_plagiarism_score: t.session_plagiarism_score
+      }))
+    };
+    await this.runWorkflow("REPORT_WORKFLOW", params, {
+      metadata: { userId: config.userId }
+    });
+    return this.state;
+  }
+
+  async onWorkflowProgress(
+    _workflowName: string,
+    _workflowId: string,
+    progress: unknown
+  ) {
+    const message = (progress as { message?: string } | null)?.message;
+    if (message) this.setState({ ...this.state, reportProgress: message });
+  }
+
+  async onWorkflowComplete(
+    _workflowName: string,
+    _workflowId: string,
+    result?: unknown
+  ) {
+    if (!result) return;
+    this.setState({
+      ...this.state,
+      status: "complete",
+      reportProgress: null,
+      report: result as FinalReport
+    });
+  }
+
+  async onWorkflowError(
+    _workflowName: string,
+    _workflowId: string,
+    error: string
+  ) {
+    console.error("Report workflow failed", error);
+    this.setState({
+      ...this.state,
+      status: "complete",
+      reportProgress: null,
+      report: {
+        score: 0,
+        llmScore: 0,
+        averageTurnScore: null,
+        integrityRisk: 0,
+        integrityFlag: false,
+        strengths: [],
+        weaknesses: [],
+        summary:
+          "The report could not be generated. Please try another session.",
+        turnCount: 0,
+        memoriesSaved: 0
+      }
+    });
   }
 }
