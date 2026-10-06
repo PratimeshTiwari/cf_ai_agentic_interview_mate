@@ -4,8 +4,8 @@ import {
   type ChatResponseResult,
   type OnChatMessageOptions
 } from "@cloudflare/ai-chat";
-import { convertToModelMessages, generateText, Output, streamText } from "ai";
-import { getModel } from "../lib/llm";
+import { convertToModelMessages, streamText } from "ai";
+import { generateStructured, getModel } from "../lib/llm";
 import { formatMemoryBank } from "../lib/memory";
 import { ANALYZER_PROMPT, INTERVIEWER_PROMPT, render } from "../lib/prompts";
 import { clampScore, turnAnalysisSchema } from "../lib/schemas";
@@ -139,9 +139,10 @@ export class InterviewAgent extends AIChatAgent<Env, InterviewState> {
 
     this.setState({ ...this.state, analyzing: true });
     try {
-      const { output } = await generateText({
-        model: await getModel(this.env, "analyzer"),
-        output: Output.object({ schema: turnAnalysisSchema }),
+      const output = await generateStructured({
+        env: this.env,
+        purpose: "analyzer",
+        schema: turnAnalysisSchema,
         system: render(ANALYZER_PROMPT, {
           role: config.role,
           phase: this.state.phase

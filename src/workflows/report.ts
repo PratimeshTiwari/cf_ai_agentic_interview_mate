@@ -4,9 +4,8 @@ import {
   type AgentWorkflowStep
 } from "agents/workflows";
 import { getAgentByName } from "agents";
-import { generateText, Output } from "ai";
 import type { InterviewAgent } from "../agents/interview";
-import { getModel } from "../lib/llm";
+import { generateStructured } from "../lib/llm";
 import { formatMemoryBank } from "../lib/memory";
 import {
   MEMORY_EXTRACTION_PROMPT,
@@ -73,14 +72,14 @@ export class InterviewReportWorkflow extends AgentWorkflow<
       percent: 0.1
     });
     const draft = await step.do("score-transcript", LLM_STEP, async () => {
-      const { output } = await generateText({
-        model: await getModel(this.env, "report"),
-        output: Output.object({ schema: finalReportSchema }),
+      return generateStructured({
+        env: this.env,
+        purpose: "report",
+        schema: finalReportSchema,
         system: render(REPORT_PROMPT, { role, turn_count: String(turnCount) }),
         prompt: transcriptText || "(The candidate did not answer anything.)",
         temperature: 0.3
       });
-      return output;
     });
 
     await this.reportProgress({
@@ -133,9 +132,10 @@ export class InterviewReportWorkflow extends AgentWorkflow<
       if (turnCount === 0) return [];
       const user = await getAgentByName(this.env.UserAgent, userId);
       const known = await user.listMemories(50);
-      const { output } = await generateText({
-        model: await getModel(this.env, "report"),
-        output: Output.object({ schema: extractedMemoriesSchema }),
+      const output = await generateStructured({
+        env: this.env,
+        purpose: "report",
+        schema: extractedMemoriesSchema,
         system: render(MEMORY_EXTRACTION_PROMPT, {
           known_facts: formatMemoryBank(known)
         }),
