@@ -33,6 +33,22 @@ type MemoryRow = {
   created_at: number;
 };
 
+/** Cosine similarity (bge-base) above which two facts count as the same
+ * memory. Rephrasings of one fact score ~0.86-0.90; distinct facts <= 0.7. */
+const NEAR_DUPLICATE = 0.85;
+
+function cosine(a: number[], b: number[]): number {
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  return na && nb ? dot / Math.sqrt(na * nb) : 0;
+}
+
 const toMemory = (row: MemoryRow): StoredMemory => ({
   id: row.id,
   text: row.text,
@@ -135,7 +151,11 @@ export class UserAgent extends AIChatAgent<Env, UserState> {
     }
   }
 
-  /** Stores new facts (skipping exact duplicates) and indexes them. */
+  /**
+   * Stores new facts and indexes them. Exact repeats are dropped, and so are
+   * near-duplicates: facts whose embedding is very close (cosine >= 0.85) to
+   * a stored memory or to another fact in the same batch.
+   */
   async addMemories(
     items: MemoryItem[],
     sessionId: string | null
@@ -145,12 +165,12 @@ export class UserAgent extends AIChatAgent<Env, UserState> {
         r.text.trim().toLowerCase()
       )
     );
-    const fresh: StoredMemory[] = [];
+    const candidates: StoredMemory[] = [];
     for (const item of items) {
       const text = item.text.trim();
       if (!text || existing.has(text.toLowerCase())) continue;
       existing.add(text.toLowerCase());
-      fresh.push({
+      candidates.push({
         id: crypto.randomUUID(),
         text,
         type: item.type,
@@ -158,31 +178,65 @@ export class UserAgent extends AIChatAgent<Env, UserState> {
         createdAt: Date.now()
       });
     }
-    if (fresh.length === 0) return 0;
+    if (candidates.length === 0) return 0;
 
-    for (const m of fresh) {
+    let accepted = candidates;
+    let vectors: number[][] = [];
+    try {
+      const embeddings = await embed(
+        this.env,
+        candidates.map((m) => m.text)
+      );
+      accepted = [];
+      for (const [i, memory] of candidates.entries()) {
+        const vector = embeddings[i];
+        if (!vector) continue;
+        const nearBatch = vectors.some(
+          (v) => cosine(v, vector) >= NEAR_DUPLICATE
+        );
+        if (nearBatch || (await this.hasNearDuplicate(vector))) continue;
+        accepted.push(memory);
+        vectors.push(vector);
+      }
+    } catch (error) {
+      console.warn("Embedding failed; storing memories without dedupe", error);
+      vectors = [];
+    }
+    if (accepted.length === 0) return 0;
+
+    for (const m of accepted) {
       this.sql`INSERT INTO memories (id, text, type, session_id, created_at)
         VALUES (${m.id}, ${m.text}, ${m.type}, ${m.sessionId}, ${m.createdAt})`;
     }
 
-    try {
-      const vectors = await embed(
-        this.env,
-        fresh.map((m) => m.text)
-      );
-      await this.env.MEMORY_INDEX.upsert(
-        fresh.map((m, i) => ({
-          id: m.id,
-          values: vectors[i],
-          metadata: { userId: this.name, type: m.type }
-        }))
-      );
-    } catch (error) {
-      console.warn("Vectorize upsert failed; memory kept in SQLite", error);
+    if (vectors.length === accepted.length) {
+      try {
+        await this.env.MEMORY_INDEX.upsert(
+          accepted.map((m, i) => ({
+            id: m.id,
+            values: vectors[i],
+            metadata: { userId: this.name, type: m.type }
+          }))
+        );
+      } catch (error) {
+        console.warn("Vectorize upsert failed; memory kept in SQLite", error);
+      }
     }
 
     this.refreshView();
-    return fresh.length;
+    return accepted.length;
+  }
+
+  private async hasNearDuplicate(vector: number[]): Promise<boolean> {
+    try {
+      const { matches } = await this.env.MEMORY_INDEX.query(vector, {
+        topK: 1,
+        filter: { userId: this.name }
+      });
+      return (matches[0]?.score ?? 0) >= NEAR_DUPLICATE;
+    } catch {
+      return false;
+    }
   }
 
   async saveSession(record: SessionRecord) {
