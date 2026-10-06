@@ -1,6 +1,7 @@
 import { routeAgentRequest } from "agents";
 
 export { InterviewAgent } from "./agents/interview";
+export { UserAgent } from "./agents/user";
 
 export default {
   async fetch(request: Request, env: Env) {

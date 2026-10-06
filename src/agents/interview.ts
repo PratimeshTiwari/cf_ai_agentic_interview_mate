@@ -1,4 +1,4 @@
-import { callable } from "agents";
+import { callable, getAgentByName } from "agents";
 import {
   AIChatAgent,
   type ChatResponseResult,
@@ -6,9 +6,10 @@ import {
 } from "@cloudflare/ai-chat";
 import { convertToModelMessages, generateText, Output, streamText } from "ai";
 import { getModel } from "../lib/llm";
+import { formatMemoryBank } from "../lib/memory";
 import { ANALYZER_PROMPT, INTERVIEWER_PROMPT, render } from "../lib/prompts";
 import { clampScore, turnAnalysisSchema } from "../lib/schemas";
-import { formatTranscript, toTranscript } from "../lib/transcript";
+import { formatTranscript, messageText, toTranscript } from "../lib/transcript";
 import {
   INITIAL_INTERVIEW_STATE,
   type InterviewConfig,
@@ -54,7 +55,7 @@ export class InterviewAgent extends AIChatAgent<Env, InterviewState> {
       candidate_name: config.candidateName,
       resume: config.resume,
       job_description: config.jobDescription,
-      memory_bank: "",
+      memory_bank: formatMemoryBank(await this.recallForTurn(config.userId)),
       phase: this.state.phase
     });
 
@@ -67,6 +68,25 @@ export class InterviewAgent extends AIChatAgent<Env, InterviewState> {
     });
 
     return result.toUIMessageStreamResponse();
+  }
+
+  private userAgent(userId: string) {
+    return getAgentByName(this.env.UserAgent, userId);
+  }
+
+  /** Pulls the facts most relevant to the candidate's latest answer. */
+  private async recallForTurn(userId: string) {
+    const lastUser = [...this.messages]
+      .reverse()
+      .find((m) => m.role === "user");
+    const query = lastUser ? messageText(lastUser) : "";
+    try {
+      const user = await this.userAgent(userId);
+      return await user.recallMemories(query || "candidate background", 5);
+    } catch (error) {
+      console.warn("Memory recall failed", error);
+      return [];
+    }
   }
 
   /**
@@ -105,6 +125,11 @@ export class InterviewAgent extends AIChatAgent<Env, InterviewState> {
         turn: this.state.turns.length + 1,
         timestamp: Date.now()
       };
+
+      if (output.memory) {
+        const user = await this.userAgent(config.userId);
+        await user.addMemories([output.memory], this.name);
+      }
 
       this.setState({
         ...this.state,

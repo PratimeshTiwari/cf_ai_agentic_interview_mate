@@ -11,9 +11,22 @@
     "run_worker_first": ["/agents/*", "/api/*"]
   },
   "durable_objects": {
-    "bindings": [{ "class_name": "InterviewAgent", "name": "InterviewAgent" }]
+    "bindings": [
+      { "class_name": "InterviewAgent", "name": "InterviewAgent" },
+      { "class_name": "UserAgent", "name": "UserAgent" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["InterviewAgent"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["InterviewAgent", "UserAgent"] }
+  ],
+  // 768-dim cosine index for memory embeddings (see README for setup)
+  "vectorize": [
+    {
+      "binding": "MEMORY_INDEX",
+      "index_name": "interview-memories",
+      "remote": true
+    }
+  ],
   "vars": {
     // "openai" (GPT-4o, needs OPENAI_API_KEY) or "workers-ai" (Llama 3.3).
     // With no OPENAI_API_KEY set, the app falls back to Workers AI.
