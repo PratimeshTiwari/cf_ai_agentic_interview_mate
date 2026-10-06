@@ -16,6 +16,7 @@ import {
 import type { UserAgent } from "../../agents/user";
 import { INITIAL_USER_STATE, type UserState } from "../../lib/types";
 import { CoachChat } from "../components/CoachChat";
+import { useLastDefined } from "../hooks/useLastDefined";
 import {
   clearCurrentUser,
   getCurrentUser,
@@ -49,7 +50,7 @@ function Dashboard({ user }: { user: DemoUser }) {
     agent: "UserAgent",
     name: user.id
   });
-  const state = agent.state ?? INITIAL_USER_STATE;
+  const state = useLastDefined(agent.state) ?? INITIAL_USER_STATE;
   const [expanded, setExpanded] = useState<string | null>(null);
 
   // Register the persona's profile with its UserAgent on first connect.

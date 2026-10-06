@@ -22,6 +22,7 @@ import { AIOrb } from "../components/AIOrb";
 import { CodeWorkspace } from "../components/CodeWorkspace";
 import { ReportModal } from "../components/ReportModal";
 import { UserVideo } from "../components/UserVideo";
+import { useLastDefined } from "../hooks/useLastDefined";
 import { useSpeaker } from "../hooks/useSpeaker";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import { getCurrentUser } from "../lib/session";
@@ -56,7 +57,8 @@ function InterviewRoom({ sessionId }: { sessionId: string }) {
     agent: "InterviewAgent",
     name: sessionId
   });
-  const state = agent.state ?? INITIAL_INTERVIEW_STATE;
+  const syncedState = useLastDefined(agent.state);
+  const state = syncedState ?? INITIAL_INTERVIEW_STATE;
   const { messages, sendMessage, status } = useAgentChat({ agent });
   const busy = status === "submitted" || status === "streaming";
 
@@ -150,7 +152,7 @@ function InterviewRoom({ sessionId }: { sessionId: string }) {
     agent.stub.endSession("manual").catch(console.error);
   };
 
-  if (!agent.state) {
+  if (!syncedState) {
     return (
       <main className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
