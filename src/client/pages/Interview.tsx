@@ -218,47 +218,37 @@ function InterviewRoom({ sessionId }: { sessionId: string }) {
         </div>
 
         <div className="min-h-32 flex flex-col items-center justify-center text-center max-w-3xl">
-          <AnimatePresence mode="wait">
-            {speech.isListening ? (
-              <motion.p
-                key="listening"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="text-xl sm:text-2xl font-light text-cyan-100"
-              >
-                {`${speech.transcript} ${speech.interim}`.trim() ||
-                  "Listening…"}
-              </motion.p>
-            ) : status === "submitted" ? (
-              <motion.p
-                key="thinking"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="text-lg text-amber-400 flex items-center gap-2"
-              >
-                <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" />
-                Ava is thinking…
-              </motion.p>
-            ) : assistantText ? (
-              <motion.div
-                key={lastAssistant?.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="bg-black/60 backdrop-blur-md p-4 rounded-xl border border-white/10 shadow-2xl max-h-64 overflow-y-auto scrollbar-thin"
-              >
-                <p className="text-base sm:text-lg text-cyan-100 leading-relaxed whitespace-pre-wrap">
-                  {assistantText}
-                </p>
-              </motion.div>
-            ) : (
-              <motion.p key="idle" className="text-slate-500">
-                Ava will greet you once the interview starts.
-              </motion.p>
-            )}
-          </AnimatePresence>
+          {/* Plain elements + CSS fade: an exit-animation gate here could
+              stall in background tabs and leave a stale reply on screen. */}
+          {speech.isListening ? (
+            <p
+              key="listening"
+              className="fade-in text-xl sm:text-2xl font-light text-cyan-100"
+            >
+              {`${speech.transcript} ${speech.interim}`.trim() || "Listening…"}
+            </p>
+          ) : status === "submitted" ? (
+            <p
+              key="thinking"
+              className="fade-in text-lg text-amber-400 flex items-center gap-2"
+            >
+              <span className="w-2 h-2 bg-amber-400 rounded-full animate-bounce" />
+              Ava is thinking…
+            </p>
+          ) : assistantText ? (
+            <div
+              key={lastAssistant?.id}
+              className="fade-in bg-black/60 backdrop-blur-md p-4 rounded-xl border border-white/10 shadow-2xl max-h-64 overflow-y-auto scrollbar-thin"
+            >
+              <p className="text-base sm:text-lg text-cyan-100 leading-relaxed whitespace-pre-wrap">
+                {assistantText}
+              </p>
+            </div>
+          ) : (
+            <p key="idle" className="text-slate-500">
+              Ava will greet you once the interview starts.
+            </p>
+          )}
           {speech.error && (
             <p className="mt-3 text-xs text-red-400">
               Mic error: {speech.error}
