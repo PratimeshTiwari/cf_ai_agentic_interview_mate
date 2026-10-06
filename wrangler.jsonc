@@ -4,9 +4,17 @@
   "main": "src/server.ts",
   "compatibility_date": "2026-06-11",
   "compatibility_flags": ["nodejs_compat"],
+  "ai": { "binding": "AI", "remote": true },
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/agents/*", "/api/*"]
+  },
+  "vars": {
+    // "openai" (GPT-4o, needs OPENAI_API_KEY) or "workers-ai" (Llama 3.3).
+    // With no OPENAI_API_KEY set, the app falls back to Workers AI.
+    "LLM_PROVIDER": "openai",
+    // Optional: name of an AI Gateway in your account to route LLM calls through.
+    "AI_GATEWAY_ID": ""
   }
 }
