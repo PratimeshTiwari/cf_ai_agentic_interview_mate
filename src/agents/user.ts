@@ -1,6 +1,9 @@
 import { callable } from "agents";
-import { AIChatAgent } from "@cloudflare/ai-chat";
-import { embed } from "../lib/memory";
+import { AIChatAgent, type OnChatMessageOptions } from "@cloudflare/ai-chat";
+import { convertToModelMessages, streamText } from "ai";
+import { getModel } from "../lib/llm";
+import { embed, formatMemoryBank } from "../lib/memory";
+import { COACH_PROMPT, render } from "../lib/prompts";
 import type { MemoryItem } from "../lib/schemas";
 import {
   INITIAL_USER_STATE,
@@ -205,6 +208,33 @@ export class UserAgent extends AIChatAgent<Env, UserState> {
       }
     }
     this.refreshView();
+  }
+
+  /** Dashboard prep coach, grounded in this candidate's history and memory. */
+  async onChatMessage(_onFinish: unknown, options?: OnChatMessageOptions) {
+    const profile = this.state.profile;
+    const recent = this.listSessions(3)
+      .map(
+        (s) =>
+          `- ${new Date(s.createdAt).toDateString()} · ${s.role} · score ${s.score}. ` +
+          `Strengths: ${s.strengths.join("; ")}. Improve: ${s.weaknesses.join("; ")}.`
+      )
+      .join("\n");
+
+    const result = streamText({
+      model: await getModel(this.env, "coach"),
+      system: render(COACH_PROMPT, {
+        candidate_name: profile?.name,
+        role: profile?.role,
+        recent_sessions: recent || "No interviews yet.",
+        memory_bank: formatMemoryBank(this.listMemories(20))
+      }),
+      // The coach only needs recent context.
+      messages: await convertToModelMessages(this.messages.slice(-20)),
+      temperature: 0.7,
+      abortSignal: options?.abortSignal
+    });
+    return result.toUIMessageStreamResponse();
   }
 
   private refreshView() {
