@@ -1,12 +1,17 @@
 # Agentic Interview Mate
 
+![Agentic Interview Mate: live Agent Log on the left, Ava's reply in the middle, and the coding workspace that opened when Ava asked for code](docs/screenshots/interview-room.jpg)
+
+<p align="center">
+  <img src="docs/screenshots/report.jpg" alt="Report produced by the workflow" width="49%" />
+  <img src="docs/screenshots/dashboard.jpg" alt="Dashboard with memory bank and prep coach" width="49%" />
+</p>
+
 **An AI interviewer that runs realistic mock interviews by voice or chat, scores every answer while you talk, flags answers that look read or AI-generated, and remembers you between sessions. Every part runs on Cloudflare: Workers, Durable Objects (Agents SDK), Workflows, Workers AI, Vectorize and AI Gateway.**
 
 The interviewer is called **Ava**. You paste your resume and a job description, and Ava runs a structured interview: introduction, a resume deep-dive, technical and coding questions, one behavioral (STAR) question, and a wrap-up. She adapts as she goes. She gives hints when you're stuck and pushes back on shallow answers.
 
 After each answer, a second "silent" model call scores you and writes a live **Agent Log**. When you finish, a durable **Workflow** produces your report, combines the live scores with a final evaluation, and saves what it learned about you. The next interview, and the dashboard's prep coach, start from that memory.
-
-![Interview room: live Agent Log on the left, Ava's reply in the middle, and the coding workspace that opened when Ava asked for code](docs/screenshots/interview-room.jpg)
 
 ---
 
