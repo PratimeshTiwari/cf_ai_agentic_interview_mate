@@ -1,5 +1,11 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import type { LanguageModel } from "ai";
+import {
+  generateText,
+  NoObjectGeneratedError,
+  Output,
+  type FlexibleSchema,
+  type LanguageModel
+} from "ai";
 import { createWorkersAI } from "workers-ai-provider";
 
 /**
@@ -52,8 +58,115 @@ export async function getModel(
   }
 
   const workersai = createWorkersAI({
-    binding: env.AI,
+    binding: withSingleTextSource(env.AI),
     gateway: gateway ? { id: gateway } : undefined
   });
   return workersai(WORKERS_AI_MODEL);
+}
+
+/**
+ * Structured output with retries. Workers AI occasionally answers a
+ * JSON-schema request with an empty body; a fresh attempt almost always
+ * succeeds, so we retry before surfacing the error.
+ */
+export async function generateStructured<T>({
+  env,
+  purpose,
+  schema,
+  system,
+  prompt,
+  temperature,
+  attempts = 3
+}: {
+  env: Env;
+  purpose: ModelPurpose;
+  schema: FlexibleSchema<T>;
+  system: string;
+  prompt: string;
+  temperature?: number;
+  attempts?: number;
+}): Promise<T> {
+  const model = await getModel(env, purpose);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const { output } = await generateText({
+        model,
+        output: Output.object({ schema }),
+        system,
+        prompt,
+        temperature
+      });
+      return output as T;
+    } catch (error) {
+      lastError = error;
+      if (!NoObjectGeneratedError.isInstance(error)) throw error;
+      console.warn(`Structured output attempt ${attempt} returned no object`);
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Llama 3.3 on Workers AI streams OpenAI-style chunks that carry each token
+ * twice: in `choices[0].delta.content` and in the legacy `response` field.
+ * workers-ai-provider emits both, which doubles every delta. This wraps the
+ * binding so streamed events keep only the `choices` text.
+ */
+function withSingleTextSource(ai: Ai): Ai {
+  return new Proxy(ai, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if (prop !== "run") {
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+      return async (...args: Parameters<Ai["run"]>) => {
+        const result = await target.run(...args);
+        return result instanceof ReadableStream
+          ? result.pipeThrough(dropDuplicateResponseField())
+          : result;
+      };
+    }
+  });
+}
+
+function dropDuplicateResponseField(): TransformStream<Uint8Array, Uint8Array> {
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = "";
+
+  const rewrite = (event: string) =>
+    event
+      .split("\n")
+      .map((line) => {
+        if (!line.startsWith("data:")) return line;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") return line;
+        try {
+          const chunk = JSON.parse(payload);
+          if (chunk?.choices?.[0]?.delta && "response" in chunk) {
+            delete chunk.response;
+            return `data: ${JSON.stringify(chunk)}`;
+          }
+        } catch {
+          // not JSON; pass through untouched
+        }
+        return line;
+      })
+      .join("\n");
+
+  return new TransformStream({
+    transform(bytes, controller) {
+      buffer += decoder.decode(bytes, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+      for (const event of events) {
+        controller.enqueue(encoder.encode(`${rewrite(event)}\n\n`));
+      }
+    },
+    flush(controller) {
+      buffer += decoder.decode();
+      if (buffer) controller.enqueue(encoder.encode(rewrite(buffer)));
+    }
+  });
 }
